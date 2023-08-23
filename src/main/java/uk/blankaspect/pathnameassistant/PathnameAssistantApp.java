@@ -1308,7 +1308,7 @@ public class PathnameAssistantApp
 
 			// Create control pane
 			HBox controlPane = new HBox(CONTROL_PANE_H_GAP, new Label(THEME_STR), themeSpinner);
-			controlPane.setMaxWidth(VBox.USE_PREF_SIZE);
+			controlPane.setMaxWidth(HBox.USE_PREF_SIZE);
 			controlPane.setAlignment(Pos.CENTER_LEFT);
 			controlPane.setPadding(CONTROL_PANE_PADDING);
 
