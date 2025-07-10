@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -44,7 +45,6 @@ import javafx.geometry.VPos;
 import javafx.scene.Scene;
 
 import javafx.scene.control.Button;
-import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
@@ -62,6 +62,7 @@ import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import javafx.stage.Stage;
@@ -83,6 +84,7 @@ import uk.blankaspect.common.exception2.FileException;
 import uk.blankaspect.common.exception2.LocationException;
 
 import uk.blankaspect.common.filesystem.PathnameUtils;
+import uk.blankaspect.common.filesystem.PathUtils;
 
 import uk.blankaspect.common.function.IProcedure1;
 
@@ -90,10 +92,14 @@ import uk.blankaspect.common.logging.ErrorLogger;
 
 import uk.blankaspect.common.misc.SystemUtils;
 
+import uk.blankaspect.common.os.OsUtils;
+
 import uk.blankaspect.common.resource.ResourceProperties;
 import uk.blankaspect.common.resource.ResourceUtils;
 
 import uk.blankaspect.common.string.StringUtils;
+
+import uk.blankaspect.ui.jfx.button.Buttons;
 
 import uk.blankaspect.ui.jfx.clipboard.ClipboardUtils;
 
@@ -101,7 +107,11 @@ import uk.blankaspect.ui.jfx.dialog.ErrorDialog;
 import uk.blankaspect.ui.jfx.dialog.NotificationDialog;
 import uk.blankaspect.ui.jfx.dialog.SimpleModalDialog;
 
+import uk.blankaspect.ui.jfx.exec.ExecUtils;
+
 import uk.blankaspect.ui.jfx.image.MessageIcon32;
+
+import uk.blankaspect.ui.jfx.label.Labels;
 
 import uk.blankaspect.ui.jfx.scene.SceneUtils;
 
@@ -131,7 +141,7 @@ public class PathnameAssistantApp
 	/** The long name of the application. */
 	private static final	String	LONG_NAME	= "Pathname assistant";
 
-	/** The key with which the application is associated. */
+	/** The name of the application when used as a key. */
 	private static final	String	NAME_KEY	= StringUtils.firstCharToLowerCase(SHORT_NAME);
 
 	/** The name of the file that contains the build properties of the application. */
@@ -154,6 +164,15 @@ public class PathnameAssistantApp
 
 	/** The preferred height of the list view of locations. */
 	private static final	double	LOCATIONS_LIST_VIEW_HEIGHT	= 240.0;
+
+	/** The delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler on platforms other than Windows. */
+	private static final	int		WINDOW_SHOWN_DELAY	= 150;
+
+	/** The delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler on Windows. */
+	private static final	int		WINDOW_SHOWN_DELAY_WINDOWS	= 50;
+
+	/** The delay (in milliseconds) before making the main window visible by restoring its opacity. */
+	private static final	int		WINDOW_VISIBLE_DELAY	= 50;
 
 	/** The margins that are applied to the visual bounds of each screen when determining whether the saved location of
 		the main window is within a screen. */
@@ -187,6 +206,7 @@ public class PathnameAssistantApp
 	{
 		String	SYSTEM_NAME				= "os.name";
 		String	USE_STYLE_SHEET_FILE	= "useStyleSheetFile";
+		String	WINDOW_SHOWN_DELAY		= "windowShownDelay";
 	}
 
 	/** Error messages. */
@@ -208,34 +228,28 @@ public class PathnameAssistantApp
 ////////////////////////////////////////////////////////////////////////
 
 	/** The properties of the build of this application. */
-	private	ResourceProperties	buildProperties;
+	private	ResourceProperties			buildProperties;
 
 	/** The string representation of the version of this application. */
-	private	String				versionStr;
-
-	/** The configuration of this application. */
-	private	Configuration		configuration;
-
-	/** User preferences. */
-	private	Preferences			preferences;
+	private	String						versionStr;
 
 	/** The state of the main window. */
-	private	WindowState			mainWindowState;
+	private	WindowState					mainWindowState;
 
 	/** A list of the file-system locations that are displayed in the <i>locations</i> text area. */
-	private	List<Path>			locations;
+	private	List<Path>					locations;
 
 	/** The main window of this application. */
-	private	Stage				primaryStage;
+	private	Stage						primaryStage;
 
 	/** The <i>edit</i> menu. */
-	private	Menu				editMenu;
+	private	Menu						editMenu;
 
-	/** The choice box for the pathname format. */
-	private	ChoiceBox<Format>	formatChoiceBox;
+	/** The spinner for the pathname format. */
+	private	CollectionSpinner<Format>	formatSpinner;
 
 	/** The list view of file-system locations. */
-	private	ListView<String>	locationsListView;
+	private	ListView<String>			locationsListView;
 
 ////////////////////////////////////////////////////////////////////////
 //  Constructors
@@ -270,6 +284,32 @@ public class PathnameAssistantApp
 
 	//------------------------------------------------------------------
 
+	/**
+	 * Returns the delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler.
+	 *
+	 * @return the delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler.
+	 */
+
+	private static int getWindowShownDelay()
+	{
+		int delay = OsUtils.isWindows() ? WINDOW_SHOWN_DELAY_WINDOWS : WINDOW_SHOWN_DELAY;
+		String value = System.getProperty(SystemPropertyKey.WINDOW_SHOWN_DELAY);
+		if (value != null)
+		{
+			try
+			{
+				delay = Integer.parseInt(value);
+			}
+			catch (NumberFormatException e)
+			{
+				e.printStackTrace();
+			}
+		}
+		return delay;
+	}
+
+	//------------------------------------------------------------------
+
 ////////////////////////////////////////////////////////////////////////
 //  Instance methods : overriding methods
 ////////////////////////////////////////////////////////////////////////
@@ -282,6 +322,9 @@ public class PathnameAssistantApp
 	public void start(
 		Stage	primaryStage)
 	{
+		// Make main window invisible until it is shown
+		primaryStage.setOpacity(0.0);
+
 		// Log stack trace of uncaught exception
 		if (ClassUtils.isFromJar(getClass()))
 		{
@@ -299,7 +342,6 @@ public class PathnameAssistantApp
 		}
 
 		// Initialise instance variables
-		preferences = new Preferences();
 		mainWindowState = new WindowState(false, true);
 		locations = new ArraySet<>();
 		this.primaryStage = primaryStage;
@@ -307,7 +349,8 @@ public class PathnameAssistantApp
 		// Read build properties and initialise version string
 		try
 		{
-			buildProperties = new ResourceProperties(ResourceUtils.normalisedPathname(getClass(), BUILD_PROPERTIES_FILENAME));
+			buildProperties =
+					new ResourceProperties(ResourceUtils.normalisedPathname(getClass(), BUILD_PROPERTIES_FILENAME));
 			versionStr = BuildUtils.versionString(getClass(), buildProperties);
 		}
 		catch (LocationException e)
@@ -315,33 +358,42 @@ public class PathnameAssistantApp
 			e.printStackTrace();
 		}
 
+		// Create container for local variables
+		class Vars
+		{
+			Configuration	config;
+			BaseException	configException;
+		}
+		Vars vars = new Vars();
+
 		// Read configuration file and decode configuration
-		BaseException configException = null;
 		try
 		{
 			// Initialise configuration
-			configuration = new Configuration();
+			vars.config = new Configuration();
 
-			// Read configuration file
-			configuration.read();
+			// Read and decode configuration
+			if (!AppConfig.noConfigFile())
+			{
+				// Read configuration file
+				vars.config.read();
 
-			// Decode configuration
-			decodeConfig(configuration.getConfig());
+				// Decode configuration
+				decodeConfig(vars.config.getConfig());
+			}
 		}
 		catch (BaseException e)
 		{
-			configException = e;
+			vars.configException = e;
 		}
 
 		// Get style manager
 		StyleManager styleManager = StyleManager.INSTANCE;
 
-		// Select theme
+		// Select theme from system property
 		String themeId = System.getProperty(StyleManager.SystemPropertyKey.THEME);
-		if (StringUtils.isNullOrEmpty(themeId))
-			themeId = preferences.themeId;
-		if (themeId != null)
-			styleManager.selectTheme(themeId);
+		if (!StringUtils.isNullOrEmpty(themeId))
+			styleManager.selectThemeOrDefault(themeId);
 
 		// Set ID and style-sheet filename on style manager
 		if (Boolean.getBoolean(SystemPropertyKey.USE_STYLE_SHEET_FILE))
@@ -358,23 +410,22 @@ public class PathnameAssistantApp
 		VBox.setVgrow(controlPane, Priority.ALWAYS);
 
 		// Set column constraints
-		ColumnConstraints column1 = new ColumnConstraints();
-		column1.setMinWidth(GridPane.USE_PREF_SIZE);
-		column1.setHalignment(HPos.RIGHT);
-		controlPane.getColumnConstraints().add(column1);
+		ColumnConstraints column = new ColumnConstraints();
+		column.setMinWidth(Region.USE_PREF_SIZE);
+		column.setHalignment(HPos.RIGHT);
+		controlPane.getColumnConstraints().add(column);
 
-		ColumnConstraints column2 = new ColumnConstraints();
-		column2.setHalignment(HPos.LEFT);
-		controlPane.getColumnConstraints().add(column2);
+		column = new ColumnConstraints();
+		column.setHalignment(HPos.LEFT);
+		controlPane.getColumnConstraints().add(column);
 
 		// Initialise row index
 		int row = 0;
 
-		// Choice box: format
-		formatChoiceBox = new ChoiceBox<>(FXCollections.observableArrayList(Format.values()));
-		formatChoiceBox.setValue(Format.NATIVE);
-		formatChoiceBox.valueProperty().addListener(observable -> updateListView());
-		controlPane.addRow(row++, new Label(FORMAT_STR), formatChoiceBox);
+		// Spinner: format
+		formatSpinner = CollectionSpinner.leftRightH(HPos.CENTER, true, Format.class, Format.NATIVE, null, null);
+		formatSpinner.itemProperty().addListener(observable -> updateListView());
+		controlPane.addRow(row++, new Label(FORMAT_STR), formatSpinner);
 
 		// Label: locations
 		Label locationsLabel = new Label(LOCATIONS_STR);
@@ -453,52 +504,56 @@ public class PathnameAssistantApp
 
 		// Set scene on main window
 		primaryStage.setScene(scene);
+		primaryStage.sizeToScene();
 
-		// Set location and size of main window when it is opening
-		primaryStage.setOnShowing(event ->
-		{
-			// Set location of window
-			Point2D location = mainWindowState.getLocation();
-			if (location != null)
-			{
-				primaryStage.setX(location.getX());
-				primaryStage.setY(location.getY());
-			}
-
-			// Set size of window
-			Dimension2D size = mainWindowState.getSize();
-			if (size == null)
-				primaryStage.sizeToScene();
-			else
-			{
-				primaryStage.setWidth(size.getWidth());
-				primaryStage.setHeight(size.getHeight());
-			}
-		});
-
-		// Set location of main window after it is shown
+		// When main window is shown, set its size and location
 		primaryStage.setOnShown(event ->
 		{
-			// Get location of window
-			Point2D location = mainWindowState.getLocation();
-
-			// Invalidate location if top centre of window is not within a screen
-			double width = primaryStage.getWidth();
-			if ((location != null)
-					&& !SceneUtils.isWithinScreen(location.getX() + 0.5 * width, location.getY(), SCREEN_MARGINS))
-				location = null;
-
-			// If there is no location, centre window within primary screen
-			if (location == null)
+			// Set size and location of main window after a delay
+			ExecUtils.afterDelay(getWindowShownDelay(), () ->
 			{
-				location = SceneUtils.centreInScreen(width, primaryStage.getHeight());
+				// Get size of window from saved state
+				Dimension2D size = mainWindowState.getSize();
+
+				// Set size of window
+				if (size != null)
+				{
+					primaryStage.setWidth(size.getWidth());
+					primaryStage.setHeight(size.getHeight());
+				}
+
+				// Get location of window from saved state
+				Point2D location = mainWindowState.getLocation();
+
+				// Invalidate location if top centre of window is not within a screen
+				double width = primaryStage.getWidth();
+				if ((location != null)
+						&& !SceneUtils.isWithinScreen(location.getX() + 0.5 * width, location.getY(), SCREEN_MARGINS))
+					location = null;
+
+				// If there is no location, centre window within primary screen
+				if (location == null)
+					location = SceneUtils.centreInScreen(width, primaryStage.getHeight());
+
+				// Set location of window
 				primaryStage.setX(location.getX());
 				primaryStage.setY(location.getY());
-			}
+
+				// Perform remaining initialisation after a delay
+				ExecUtils.afterDelay(WINDOW_VISIBLE_DELAY, () ->
+				{
+					// Make window visible
+					primaryStage.setOpacity(1.0);
+
+					// Report any configuration error
+					if (vars.configException != null)
+						ErrorDialog.show(primaryStage, SHORT_NAME + " : " + CONFIG_ERROR_STR, vars.configException);
+				});
+			});
 		});
 
 		// Write configuration file when main window is closed
-		if (configuration != null)
+		if (vars.config != null)
 		{
 			primaryStage.setOnHiding(event ->
 			{
@@ -506,15 +561,15 @@ public class PathnameAssistantApp
 				mainWindowState.restoreAndUpdate(primaryStage);
 
 				// Write configuration
-				if (configuration.canWrite())
+				if (vars.config.canWrite())
 				{
 					try
 					{
 						// Encode configuration
-						encodeConfig(configuration.getConfig());
+						encodeConfig(vars.config.getConfig());
 
 						// Write configuration file
-						configuration.write();
+						vars.config.write();
 					}
 					catch (FileException e)
 					{
@@ -526,10 +581,6 @@ public class PathnameAssistantApp
 
 		// Display main window
 		primaryStage.show();
-
-		// Report any configuration error
-		if (configException != null)
-			ErrorDialog.show(primaryStage, SHORT_NAME + " : " + CONFIG_ERROR_STR, configException);
 	}
 
 	//------------------------------------------------------------------
@@ -552,7 +603,9 @@ public class PathnameAssistantApp
 		rootNode.clear();
 
 		// Encode theme ID
-		rootNode.addMap(PropertyKey.APPEARANCE).addString(PropertyKey.THEME, preferences.themeId);
+		String themeId = StyleManager.INSTANCE.getThemeId();
+		if (themeId != null)
+			rootNode.addMap(PropertyKey.APPEARANCE).addString(PropertyKey.THEME, themeId);
 
 		// Encode state of main window
 		MapNode windowStateNode = mainWindowState.encodeTree();
@@ -575,7 +628,10 @@ public class PathnameAssistantApp
 		// Decode theme ID
 		String key = PropertyKey.APPEARANCE;
 		if (rootNode.hasMap(key))
-			preferences.themeId = rootNode.getMapNode(key).getString(PropertyKey.THEME, StyleManager.DEFAULT_THEME_ID);
+		{
+			String themeId = rootNode.getMapNode(key).getString(PropertyKey.THEME, StyleManager.DEFAULT_THEME_ID);
+			StyleManager.INSTANCE.selectThemeOrDefault(themeId);
+		}
 
 		// Decode state of main window
 		key = PropertyKey.MAIN_WINDOW;
@@ -618,7 +674,7 @@ public class PathnameAssistantApp
 
 		// Add menu item: preferences
 		menuItem = new MenuItem(PREFERENCES_STR);
-		menuItem.setOnAction(event -> onEditPreferences());
+		menuItem.setOnAction(event -> new PreferencesDialog(primaryStage).showDialog());
 		menuItems.add(menuItem);
 
 		// Add menu items
@@ -748,7 +804,7 @@ public class PathnameAssistantApp
 
 	private void updateListView()
 	{
-		Format format = formatChoiceBox.getValue();
+		Format format = formatSpinner.getItem();
 		locationsListView.setItems(FXCollections.observableArrayList(
 				locations.stream().map(location -> format.locationToString(location)).toList()));
 	}
@@ -852,7 +908,7 @@ public class PathnameAssistantApp
 	private void onCopyPathnames()
 	{
 		// Create text
-		Format format = formatChoiceBox.getValue();
+		Format format = formatSpinner.getItem();
 		StringBuilder buffer = new StringBuilder(locations.size() * 128);
 		for (Path location : locations)
 		{
@@ -935,34 +991,6 @@ public class PathnameAssistantApp
 
 	//------------------------------------------------------------------
 
-	/**
-	 * Displays a modal dialog in which the user preferences of the application may be edited.
-	 */
-
-	private void onEditPreferences()
-	{
-		Preferences result = new PreferencesDialog(primaryStage, PREFERENCES_STR).showDialog();
-		if (result != null)
-		{
-			// Update instance variable
-			preferences = result;
-
-			// Apply theme
-			StyleManager styleManager = StyleManager.INSTANCE;
-			String themeId = preferences.themeId;
-			if ((themeId != null) && !themeId.equals(styleManager.getThemeId()))
-			{
-				// Update theme
-				styleManager.selectTheme(themeId);
-
-				// Reapply style sheet to the scenes of all JavaFX windows
-				styleManager.reapplyStylesheet();
-			}
-		}
-	}
-
-	//------------------------------------------------------------------
-
 ////////////////////////////////////////////////////////////////////////
 //  Enumerated types
 ////////////////////////////////////////////////////////////////////////
@@ -996,7 +1024,7 @@ public class PathnameAssistantApp
 			protected String locationToString(
 				Path	location)
 			{
-				return location.toAbsolutePath().toString();
+				return PathUtils.absString(location);
 			}
 		},
 
@@ -1013,7 +1041,7 @@ public class PathnameAssistantApp
 			protected String locationToString(
 				Path	location)
 			{
-				return location.toAbsolutePath().toString().replace(File.separatorChar, '/');
+				return PathUtils.absStringStd(location);
 			}
 		},
 
@@ -1031,8 +1059,8 @@ public class PathnameAssistantApp
 			protected String locationToString(
 				Path	location)
 			{
-				String pathname = location.toAbsolutePath().toString();
-				String userHome = SystemUtils.getUserHomePathname();
+				String pathname = PathUtils.absString(location);
+				String userHome = SystemUtils.userHomeDirectoryPathname();
 				if ((userHome != null) && pathname.startsWith(userHome))
 					pathname = PathnameUtils.USER_HOME_PREFIX + pathname.substring(userHome.length());
 				return pathname.replace(File.separatorChar, '/');
@@ -1167,67 +1195,18 @@ public class PathnameAssistantApp
 			// Call superclass constructor
 			super(ID, NAME_KEY, SHORT_NAME, LONG_NAME);
 
-			// Get location of parent directory of config file
-			AppAuxDirectory.Directory directory = AppAuxDirectory.getDirectory(NAME_KEY, PathnameAssistantApp.class);
-			if (directory == null)
-				throw new BaseException(ErrorMsg.NO_AUXILIARY_DIRECTORY);
+			// Determine location of config file
+			if (!noConfigFile())
+			{
+				// Get location of parent directory of config file
+				AppAuxDirectory.Directory directory =
+						AppAuxDirectory.getDirectory(NAME_KEY, getClass().getEnclosingClass());
+				if (directory == null)
+					throw new BaseException(ErrorMsg.NO_AUXILIARY_DIRECTORY);
 
-			// Set parent directory of config file
-			setDirectory(directory.location());
-		}
-
-		//--------------------------------------------------------------
-
-	}
-
-	//==================================================================
-
-
-	// CLASS: PREFERENCES
-
-
-	/**
-	 * This class implements a set of user preferences.
-	 */
-
-	private static class Preferences
-	{
-
-	////////////////////////////////////////////////////////////////////
-	//  Instance variables
-	////////////////////////////////////////////////////////////////////
-
-		/** The identifier of the theme. */
-		private	String	themeId;
-
-	////////////////////////////////////////////////////////////////////
-	//  Constructors
-	////////////////////////////////////////////////////////////////////
-
-		/**
-		 * Creates a new instance of a default set of user preferences.
-		 */
-
-		private Preferences()
-		{
-			// Initialise instance variables
-			themeId = StyleManager.DEFAULT_THEME_ID;
-		}
-
-		//--------------------------------------------------------------
-
-		/**
-		 * Creates a new instance of a set of user preferences with the specified values.
-		 *
-		 * @param themeId
-		 *          the identifier of the theme.
-		 */
-
-		private Preferences(
-			String	themeId)
-		{
-			// Initialise instance variables
-			this.themeId = themeId;
+				// Set parent directory of config file
+				setDirectory(directory.location());
+			}
 		}
 
 		//--------------------------------------------------------------
@@ -1245,7 +1224,7 @@ public class PathnameAssistantApp
 	 */
 
 	private static class PreferencesDialog
-		extends SimpleModalDialog<Preferences>
+		extends SimpleModalDialog<Void>
 	{
 
 	////////////////////////////////////////////////////////////////////
@@ -1259,14 +1238,15 @@ public class PathnameAssistantApp
 		private static final	Insets	CONTROL_PANE_PADDING	= new Insets(6.0, 12.0, 6.0, 12.0);
 
 		/** Miscellaneous strings. */
-		private static final	String	THEME_STR	= "Theme";
+		private static final	String	PREFERENCES_STR	= "Preferences";
+		private static final	String	THEME_STR		= "Theme";
 
 	////////////////////////////////////////////////////////////////////
 	//  Instance variables
 	////////////////////////////////////////////////////////////////////
 
-		/** The result of this dialog. */
-		private	Preferences	result;
+		/** Flag: if {@code true}, this dialog was accepted. */
+		private	boolean	accepted;
 
 	////////////////////////////////////////////////////////////////////
 	//  Constructors
@@ -1277,38 +1257,38 @@ public class PathnameAssistantApp
 		 *
 		 * @param owner
 		 *          the window that will be the owner of this dialog, or {@code null} if the dialog has no owner.
-		 * @param title
-		 *          the title of the dialog.
 		 */
 
 		private PreferencesDialog(
-			Window	owner,
-			String	title)
+			Window	owner)
 		{
 			// Call superclass constructor
-			super(owner, MethodHandles.lookup().lookupClass().getCanonicalName(), null, title);
+			super(owner, MethodHandles.lookup().lookupClass().getCanonicalName(), null, PREFERENCES_STR);
 
 			// Create procedure to select theme
 			StyleManager styleManager = StyleManager.INSTANCE;
 			IProcedure1<String> selectTheme = id ->
 			{
-				// Update theme
-				styleManager.selectTheme(id);
+				if (id != null)
+				{
+					// Update theme
+					styleManager.selectTheme(id);
 
-				// Reapply style sheet to the scenes of all JavaFX windows
-				styleManager.reapplyStylesheet();
+					// Reapply style sheet to the scenes of all JavaFX windows
+					styleManager.reapplyStylesheet();
+				}
 			};
 
 			// Create spinner: theme
 			String themeId = styleManager.getThemeId();
 			CollectionSpinner<String> themeSpinner =
 					CollectionSpinner.leftRightH(HPos.CENTER, true, styleManager.getThemeIds(), themeId, null,
-												 id -> styleManager.findTheme(id).getName());
+												 id -> styleManager.findTheme(id).name());
 			themeSpinner.itemProperty().addListener((observable, oldId, id) -> selectTheme.invoke(id));
 
 			// Create control pane
-			HBox controlPane = new HBox(CONTROL_PANE_H_GAP, new Label(THEME_STR), themeSpinner);
-			controlPane.setMaxWidth(HBox.USE_PREF_SIZE);
+			HBox controlPane = new HBox(CONTROL_PANE_H_GAP, Labels.hNoShrink(THEME_STR), themeSpinner);
+			controlPane.setMaxWidth(Region.USE_PREF_SIZE);
 			controlPane.setAlignment(Pos.CENTER_LEFT);
 			controlPane.setPadding(CONTROL_PANE_PADDING);
 
@@ -1316,12 +1296,12 @@ public class PathnameAssistantApp
 			addContent(controlPane);
 
 			// Create button: OK
-			Button okButton = new Button(OK_STR);
+			Button okButton = Buttons.hNoShrink(OK_STR);
 			okButton.getProperties().put(BUTTON_GROUP_KEY, BUTTON_GROUP1);
 			okButton.setOnAction(event ->
 			{
-				// Get result
-				result = new Preferences(themeSpinner.getItem());
+				// Indicate that dialog was accepted
+				accepted = true;
 
 				// Close dialog
 				requestClose();
@@ -1329,7 +1309,7 @@ public class PathnameAssistantApp
 			addButton(okButton, HPos.RIGHT);
 
 			// Create button: cancel
-			Button cancelButton = new Button(CANCEL_STR);
+			Button cancelButton = Buttons.hNoShrink(CANCEL_STR);
 			cancelButton.getProperties().put(BUTTON_GROUP_KEY, BUTTON_GROUP1);
 			cancelButton.setOnAction(event -> requestClose());
 			addButton(cancelButton, HPos.RIGHT);
@@ -1340,28 +1320,12 @@ public class PathnameAssistantApp
 			// When window is closed, restore old theme if dialog was not accepted
 			setOnHiding(event ->
 			{
-				if ((result == null) && (themeId != null) && !themeId.equals(styleManager.getThemeId()))
+				if (!accepted && !Objects.equals(themeId, styleManager.getThemeId()))
 					selectTheme.invoke(themeId);
 			});
 
 			// Apply new style sheet to scene
 			applyStyleSheet();
-		}
-
-		//--------------------------------------------------------------
-
-	////////////////////////////////////////////////////////////////////
-	//  Instance methods : overriding methods
-	////////////////////////////////////////////////////////////////////
-
-		/**
-		 * {@inheritDoc}
-		 */
-
-		@Override
-		protected Preferences getResult()
-		{
-			return result;
 		}
 
 		//--------------------------------------------------------------
