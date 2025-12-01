@@ -67,6 +67,7 @@ import javafx.scene.layout.VBox;
 
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import javafx.stage.WindowEvent;
 
 import uk.blankaspect.common.basictree.MapNode;
 
@@ -166,7 +167,7 @@ public class PathnameAssistantApp
 	private static final	double	LOCATIONS_LIST_VIEW_HEIGHT	= 240.0;
 
 	/** The delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler on platforms other than Windows. */
-	private static final	int		WINDOW_SHOWN_DELAY	= 150;
+	private static final	int		WINDOW_SHOWN_DELAY	= 200;
 
 	/** The delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler on Windows. */
 	private static final	int		WINDOW_SHOWN_DELAY_WINDOWS	= 50;
@@ -659,7 +660,8 @@ public class PathnameAssistantApp
 
 		// Add menu item: exit
 		MenuItem menuItem = new MenuItem(EXIT_STR);
-		menuItem.setOnAction(event -> Platform.exit());
+		menuItem.setOnAction(event ->
+				primaryStage.fireEvent(new WindowEvent(primaryStage, WindowEvent.WINDOW_CLOSE_REQUEST)));
 		fileMenu.getItems().add(menuItem);
 
 		// Create menu: edit
