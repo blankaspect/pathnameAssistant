@@ -47,7 +47,6 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
@@ -114,6 +113,8 @@ import uk.blankaspect.ui.jfx.image.MessageIcon32;
 
 import uk.blankaspect.ui.jfx.label.Labels;
 
+import uk.blankaspect.ui.jfx.listview.SimpleTextListView;
+
 import uk.blankaspect.ui.jfx.scene.SceneUtils;
 
 import uk.blankaspect.ui.jfx.spinner.CollectionSpinner;
@@ -152,10 +153,10 @@ public class PathnameAssistantApp
 	private static final	String	STYLE_SHEET_FILENAME	= NAME_KEY + "-%02d.css";
 
 	/** The horizontal gap between adjacent controls. */
-	private static final	double	CONTROL_V_GAP	= 6.0;
+	private static final	double	CONTROL_H_GAP	= 6.0;
 
 	/** The vertical gap between adjacent controls. */
-	private static final	double	CONTROL_H_GAP	= 6.0;
+	private static final	double	CONTROL_V_GAP	= 6.0;
 
 	/** The padding around the control pane. */
 	private static final	Insets	CONTROL_PANE_PADDING	= new Insets(6.0, 8.0, 6.0, 8.0);
@@ -180,19 +181,21 @@ public class PathnameAssistantApp
 	private static final	Insets	SCREEN_MARGINS	= new Insets(0.0, 32.0, 32.0, 0.0);
 
 	/** Miscellaneous strings. */
-	private static final	String	CONFIG_ERROR_STR		= "Configuration error";
-	private static final	String	FILE_STR				= "File";
-	private static final	String	EXIT_STR				= "Exit";
-	private static final	String	EDIT_STR				= "Edit";
-	private static final	String	COPY_FILENAMES_STR		= "Copy filenames";
-	private static final	String	COPY_FILENAME_STEMS_STR	= "Copy filename stems";
-	private static final	String	COPY_PATHNAMES_STR		= "Copy pathnames";
-	private static final	String	PASTE_STR				= "Paste";
-	private static final	String	CLEAR_LOCATIONS_STR		= "Clear locations";
-	private static final	String	SORT_LOCATIONS_STR		= "Sort locations";
-	private static final	String	PREFERENCES_STR			= "Preferences";
-	private static final	String	FORMAT_STR				= "Format";
-	private static final	String	LOCATIONS_STR			= "Locations";
+	private static final	String	CONFIG_ERROR_STR			= "Configuration error";
+	private static final	String	FILE_STR					= "File";
+	private static final	String	EXIT_STR					= "Exit";
+	private static final	String	EDIT_STR					= "Edit";
+	private static final	String	COPY_FILENAMES_STR			= "Copy filenames";
+	private static final	String	COPY_FILENAME_STEMS_STR		= "Copy filename stems";
+	private static final	String	COPY_PATHNAMES_STR			= "Copy pathnames";
+	private static final	String	COPY_PARENT_PATHNAME_STR	= "Copy parent pathname";
+	private static final	String	PASTE_STR					= "Paste";
+	private static final	String	DELETE_LOCATION_STR			= "Delete location";
+	private static final	String	CLEAR_LOCATIONS_STR			= "Clear locations";
+	private static final	String	SORT_LOCATIONS_STR			= "Sort locations";
+	private static final	String	PREFERENCES_STR				= "Preferences";
+	private static final	String	FORMAT_STR					= "Format";
+	private static final	String	LOCATIONS_STR				= "Locations";
 
 	/** Keys of properties. */
 	private interface PropertyKey
@@ -221,7 +224,9 @@ public class PathnameAssistantApp
 	private enum MenuItemRequirement
 	{
 		LOCATIONS,
-		MULTIPLE_LOCATIONS
+		MULTIPLE_LOCATIONS,
+		SELECTED_LOCATION,
+		SELECTED_LOCATION_NOT_ROOT
 	}
 
 ////////////////////////////////////////////////////////////////////////
@@ -237,7 +242,7 @@ public class PathnameAssistantApp
 	/** The state of the main window. */
 	private	WindowState					mainWindowState;
 
-	/** A list of the file-system locations that are displayed in the <i>locations</i> text area. */
+	/** A list of the file-system locations that are displayed in {@link #locationsListView}. */
 	private	List<Path>					locations;
 
 	/** The main window of this application. */
@@ -250,7 +255,7 @@ public class PathnameAssistantApp
 	private	CollectionSpinner<Format>	formatSpinner;
 
 	/** The list view of file-system locations. */
-	private	ListView<String>			locationsListView;
+	private	SimpleTextListView<Path>	locationsListView;
 
 ////////////////////////////////////////////////////////////////////////
 //  Constructors
@@ -425,7 +430,7 @@ public class PathnameAssistantApp
 
 		// Spinner: format
 		formatSpinner = CollectionSpinner.leftRightH(HPos.CENTER, true, Format.class, Format.NATIVE, null, null);
-		formatSpinner.itemProperty().addListener(observable -> updateListView());
+		formatSpinner.itemProperty().addListener(observable -> locationsListView.refresh());
 		controlPane.addRow(row++, new Label(FORMAT_STR), formatSpinner);
 
 		// Label: locations
@@ -434,8 +439,9 @@ public class PathnameAssistantApp
 		GridPane.setMargin(locationsLabel, new Insets(4.0, 0.0, 0.0, 0.0));
 
 		// List view: locations
-		locationsListView = new ListView<>();
+		locationsListView = new SimpleTextListView<>(location -> formatSpinner.getItem().locationToString(location));
 		locationsListView.setPrefSize(LOCATIONS_LIST_VIEW_WIDTH, LOCATIONS_LIST_VIEW_HEIGHT);
+		locationsListView.getSelectionModel().selectedItemProperty().addListener(observable -> updateEditMenu());
 		GridPane.setHgrow(locationsListView, Priority.ALWAYS);
 		GridPane.setVgrow(locationsListView, Priority.ALWAYS);
 		controlPane.addRow(row++, locationsLabel, locationsListView);
@@ -727,6 +733,12 @@ public class PathnameAssistantApp
 		menuItem.setOnAction(event -> onCopyPathnames());
 		menuItems.add(menuItem);
 
+		// Add menu item: copy parent pathname
+		menuItem = new MenuItem(COPY_PARENT_PATHNAME_STR);
+		menuItem.setUserData(MenuItemRequirement.SELECTED_LOCATION_NOT_ROOT);
+		menuItem.setOnAction(event -> onCopyParentPathname());
+		menuItems.add(menuItem);
+
 		// Add menu item: paste
 		menuItem = new MenuItem(PASTE_STR);
 		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.V, KeyCombination.CONTROL_DOWN));
@@ -735,6 +747,13 @@ public class PathnameAssistantApp
 
 		// Add separator
 		menuItems.add(new SeparatorMenuItem());
+
+		// Add menu item: delete location
+		menuItem = new MenuItem(DELETE_LOCATION_STR);
+		menuItem.setUserData(MenuItemRequirement.SELECTED_LOCATION);
+		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.DELETE));
+		menuItem.setOnAction(event -> onDeleteLocation());
+		menuItems.add(menuItem);
 
 		// Add menu item: clear locations
 		menuItem = new MenuItem(CLEAR_LOCATIONS_STR);
@@ -771,18 +790,19 @@ public class PathnameAssistantApp
 	{
 		for (MenuItem menuItem : menuItems)
 		{
-			if (menuItem.getUserData() instanceof MenuItemRequirement menuItemReq)
+			if (menuItem.getUserData() instanceof MenuItemRequirement menuItemRequirement)
 			{
-				switch (menuItemReq)
+				menuItem.setDisable(switch (menuItemRequirement)
 				{
-					case LOCATIONS:
-						menuItem.setDisable(locations.isEmpty());
-						break;
-
-					case MULTIPLE_LOCATIONS:
-						menuItem.setDisable(locations.size() < 2);
-						break;
-				}
+					case LOCATIONS                  -> locations.isEmpty();
+					case MULTIPLE_LOCATIONS         -> (locations.size() < 2);
+					case SELECTED_LOCATION          -> locationsListView.getSelectionModel().isEmpty();
+					case SELECTED_LOCATION_NOT_ROOT ->
+					{
+						Path location = locationsListView.getSelectionModel().getSelectedItem();
+						yield (location == null) || (location.getParent() == null);
+					}
+				});
 			}
 		}
 	}
@@ -806,9 +826,7 @@ public class PathnameAssistantApp
 
 	private void updateListView()
 	{
-		Format format = formatSpinner.getItem();
-		locationsListView.setItems(FXCollections.observableArrayList(
-				locations.stream().map(location -> format.locationToString(location)).toList()));
+		locationsListView.setItems(FXCollections.observableArrayList(locations));
 	}
 
 	//------------------------------------------------------------------
@@ -826,11 +844,11 @@ public class PathnameAssistantApp
 		// Update instance variable
 		this.locations.addAll(locations);
 
-		// Update 'edit' menu
-		updateEditMenu();
-
 		// Update list view
 		updateListView();
+
+		// Update 'edit' menu
+		updateEditMenu();
 	}
 
 	//------------------------------------------------------------------
@@ -903,7 +921,7 @@ public class PathnameAssistantApp
 
 	/**
 	 * Copies the pathname of each element of the list of locations to the system clipboard.  A location is converted to
-	 * a pathname according to the format that is selected in the choice box.  If there is more than one location, a
+	 * a pathname according to the format that is selected in the spinner.  If there is more than one location, a
 	 * line-feed character (U+000A) is appended to each pathname.
 	 */
 
@@ -934,6 +952,31 @@ public class PathnameAssistantApp
 	//------------------------------------------------------------------
 
 	/**
+	 * Copies the pathname of the parent of the location that is selected in the list view to the system clipboard.  The
+	 * location is converted to a pathname according to the format that is selected in the spinner.
+	 */
+
+	private void onCopyParentPathname()
+	{
+		try
+		{
+			Path location = locationsListView.getSelectionModel().getSelectedItem();
+			if (location != null)
+			{
+				Path parent = location.getParent();
+				if (parent != null)
+					ClipboardUtils.putTextThrow(formatSpinner.getItem().locationToString(parent));
+			}
+		}
+		catch (BaseException e)
+		{
+			ErrorDialog.show(primaryStage, COPY_PARENT_PATHNAME_STR, e);
+		}
+	}
+
+	//------------------------------------------------------------------
+
+	/**
 	 * Appends any file-system locations that are on the system clipboard to the list of locations that is displayed in
 	 * the list view.
 	 */
@@ -953,6 +996,32 @@ public class PathnameAssistantApp
 	//------------------------------------------------------------------
 
 	/**
+	 * Removes the selected location from the list of locations that is displayed in the list view.
+	 */
+
+	private void onDeleteLocation()
+	{
+		int index = locationsListView.getSelectionModel().getSelectedIndex();
+		if (index >= 0)
+		{
+			// Remove item from list
+			locations.remove(index);
+
+			// Update list view
+			updateListView();
+
+			// Select item at old index
+			if (!locations.isEmpty())
+				locationsListView.getSelectionModel().select(Math.min(index, locations.size() - 1));
+
+			// Update 'edit' menu
+			updateEditMenu();
+		}
+	}
+
+	//------------------------------------------------------------------
+
+	/**
 	 * Removes all elements from the list of locations that is displayed in the list view.
 	 */
 
@@ -961,11 +1030,11 @@ public class PathnameAssistantApp
 		// Update instance variable
 		locations.clear();
 
-		// Update 'edit' menu
-		updateEditMenu();
-
 		// Update list view
 		updateListView();
+
+		// Update 'edit' menu
+		updateEditMenu();
 	}
 
 	//------------------------------------------------------------------
