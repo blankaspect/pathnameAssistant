@@ -83,7 +83,6 @@ import uk.blankaspect.common.exception2.BaseException;
 import uk.blankaspect.common.exception2.FileException;
 import uk.blankaspect.common.exception2.LocationException;
 
-import uk.blankaspect.common.filesystem.PathnameUtils;
 import uk.blankaspect.common.filesystem.PathUtils;
 
 import uk.blankaspect.common.function.IProcedure1;
@@ -91,8 +90,6 @@ import uk.blankaspect.common.function.IProcedure1;
 import uk.blankaspect.common.logging.ErrorLogger;
 
 import uk.blankaspect.common.misc.SystemUtils;
-
-import uk.blankaspect.common.os.OsUtils;
 
 import uk.blankaspect.common.resource.ResourceProperties;
 import uk.blankaspect.common.resource.ResourceUtils;
@@ -167,11 +164,8 @@ public class PathnameAssistantApp
 	/** The preferred height of the list view of locations. */
 	private static final	double	LOCATIONS_LIST_VIEW_HEIGHT	= 240.0;
 
-	/** The delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler on platforms other than Windows. */
-	private static final	int		WINDOW_SHOWN_DELAY	= 200;
-
-	/** The delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler on Windows. */
-	private static final	int		WINDOW_SHOWN_DELAY_WINDOWS	= 50;
+	/** The delay (in milliseconds) in a <i>WINDOW_SHOWN</i> event handler. */
+	private static final	int		WINDOW_SHOWN_DELAY	= 50;
 
 	/** The delay (in milliseconds) before making the main window visible by restoring its opacity. */
 	private static final	int		WINDOW_VISIBLE_DELAY	= 50;
@@ -298,7 +292,7 @@ public class PathnameAssistantApp
 
 	private static int getWindowShownDelay()
 	{
-		int delay = OsUtils.isWindows() ? WINDOW_SHOWN_DELAY_WINDOWS : WINDOW_SHOWN_DELAY;
+		int delay = WINDOW_SHOWN_DELAY;
 		String value = System.getProperty(SystemPropertyKey.WINDOW_SHOWN_DELAY);
 		if (value != null)
 		{
@@ -1133,7 +1127,7 @@ public class PathnameAssistantApp
 				String pathname = PathUtils.absString(location);
 				String userHome = SystemUtils.userHomeDirectoryPathname();
 				if ((userHome != null) && pathname.startsWith(userHome))
-					pathname = PathnameUtils.USER_HOME_PREFIX + pathname.substring(userHome.length());
+					pathname = "~" + pathname.substring(userHome.length());
 				return pathname.replace(File.separatorChar, '/');
 			}
 		},
