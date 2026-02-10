@@ -21,20 +21,19 @@ package uk.blankaspect.pathnameassistant;
 import java.io.File;
 import java.io.IOException;
 
-import java.lang.invoke.MethodHandles;
-
 import java.nio.file.Path;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 import javafx.application.Application;
 import javafx.application.Platform;
 
 import javafx.collections.FXCollections;
+
+import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
 
 import javafx.geometry.Dimension2D;
 import javafx.geometry.HPos;
@@ -45,7 +44,6 @@ import javafx.geometry.VPos;
 
 import javafx.scene.Scene;
 
-import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
@@ -60,13 +58,11 @@ import javafx.scene.input.TransferMode;
 
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import javafx.stage.Stage;
-import javafx.stage.Window;
 import javafx.stage.WindowEvent;
 
 import uk.blankaspect.common.basictree.MapNode;
@@ -86,8 +82,6 @@ import uk.blankaspect.common.exception2.LocationException;
 
 import uk.blankaspect.common.filesystem.PathUtils;
 
-import uk.blankaspect.common.function.IProcedure1;
-
 import uk.blankaspect.common.logging.ErrorLogger;
 
 import uk.blankaspect.common.misc.SystemUtils;
@@ -97,19 +91,14 @@ import uk.blankaspect.common.resource.ResourceUtils;
 
 import uk.blankaspect.common.string.StringUtils;
 
-import uk.blankaspect.ui.jfx.button.Buttons;
-
 import uk.blankaspect.ui.jfx.clipboard.ClipboardUtils;
 
 import uk.blankaspect.ui.jfx.dialog.ErrorDialog;
 import uk.blankaspect.ui.jfx.dialog.NotificationDialog;
-import uk.blankaspect.ui.jfx.dialog.SimpleModalDialog;
 
 import uk.blankaspect.ui.jfx.exec.ExecUtils;
 
 import uk.blankaspect.ui.jfx.image.MessageIcon32;
-
-import uk.blankaspect.ui.jfx.label.Labels;
 
 import uk.blankaspect.ui.jfx.listview.SimpleTextListView;
 
@@ -179,21 +168,11 @@ public class PathnameAssistantApp
 	private static final	Insets	SCREEN_MARGINS	= new Insets(0.0, 32.0, 32.0, 0.0);
 
 	/** Miscellaneous strings. */
-	private static final	String	CONFIG_ERROR_STR			= "Configuration error";
-	private static final	String	FILE_STR					= "File";
-	private static final	String	EXIT_STR					= "Exit";
-	private static final	String	EDIT_STR					= "Edit";
-	private static final	String	COPY_FILENAMES_STR			= "Copy filenames";
-	private static final	String	COPY_FILENAME_STEMS_STR		= "Copy filename stems";
-	private static final	String	COPY_PATHNAMES_STR			= "Copy pathnames";
-	private static final	String	COPY_PARENT_PATHNAME_STR	= "Copy parent pathname";
-	private static final	String	PASTE_STR					= "Paste";
-	private static final	String	DELETE_LOCATION_STR			= "Delete location";
-	private static final	String	CLEAR_LOCATIONS_STR			= "Clear locations";
-	private static final	String	SORT_LOCATIONS_STR			= "Sort locations";
-	private static final	String	PREFERENCES_STR				= "Preferences";
-	private static final	String	FORMAT_STR					= "Format";
-	private static final	String	LOCATIONS_STR				= "Locations";
+	private static final	String	CONFIG_ERROR_STR	= "Configuration error";
+	private static final	String	FILE_STR			= "File";
+	private static final	String	EDIT_STR			= "Edit";
+	private static final	String	FORMAT_STR			= "Format";
+	private static final	String	LOCATIONS_STR		= "Locations";
 
 	/** Keys of properties. */
 	private interface PropertyKey
@@ -216,18 +195,19 @@ public class PathnameAssistantApp
 	/** Error messages. */
 	private interface ErrorMsg
 	{
-		String	NO_AUXILIARY_DIRECTORY		= "The location of the auxiliary directory could not be determined.";
-		String	NO_LOCATIONS_ON_CLIPBOARD	= "There are no file-system locations on the clipboard.";
+		String	NO_AUXILIARY_DIRECTORY =
+				"The location of the auxiliary directory could not be determined.";
+
+		String	NO_LOCATIONS_ON_CLIPBOARD =
+				"There are no file-system locations on the clipboard.";
 	}
 
-	/** Requirements of menu items. **/
-	private enum MenuItemRequirement
-	{
-		LOCATIONS,
-		MULTIPLE_LOCATIONS,
-		SELECTED_LOCATION,
-		SELECTED_LOCATION_NOT_ROOT
-	}
+////////////////////////////////////////////////////////////////////////
+//  Class variables
+////////////////////////////////////////////////////////////////////////
+
+	/** The single instance of this class. */
+	private static	PathnameAssistantApp	instance;
 
 ////////////////////////////////////////////////////////////////////////
 //  Instance variables
@@ -323,6 +303,14 @@ public class PathnameAssistantApp
 ////////////////////////////////////////////////////////////////////////
 //  Instance methods : overriding methods
 ////////////////////////////////////////////////////////////////////////
+
+	@Override
+	public void init()
+	{
+		instance = this;
+	}
+
+	//------------------------------------------------------------------
 
 	/**
 	 * {@inheritDoc}
@@ -445,7 +433,6 @@ public class PathnameAssistantApp
 		// List view: locations
 		locationsListView = new SimpleTextListView<>(location -> formatSpinner.getItem().locationToString(location));
 		locationsListView.setPrefSize(LOCATIONS_LIST_VIEW_WIDTH, LOCATIONS_LIST_VIEW_HEIGHT);
-		locationsListView.getSelectionModel().selectedItemProperty().addListener(observable -> updateEditMenu());
 		GridPane.setHgrow(locationsListView, Priority.ALWAYS);
 		GridPane.setVgrow(locationsListView, Priority.ALWAYS);
 		controlPane.addRow(row++, locationsLabel, locationsListView);
@@ -456,8 +443,19 @@ public class PathnameAssistantApp
 		mainPane.setOnContextMenuRequested(event ->
 		{
 			ContextMenu menu = new ContextMenu();
-			menu.getItems().addAll(getEditMenuItems());
-			menu.setOnShowing(event0 -> updateMenuItems(menu.getItems()));
+			menu.getItems().addAll(
+				Command.COPY_FILENAMES.newMenuItem(),
+				Command.COPY_FILENAME_STEMS.newMenuItem(),
+				Command.COPY_PATHNAMES.newMenuItem(),
+				Command.COPY_PARENT_PATHNAME.newMenuItem(),
+				Command.PASTE.newMenuItem(),
+				new SeparatorMenuItem(),
+				Command.DELETE_LOCATION.newMenuItem(),
+				Command.CLEAR_LOCATIONS.newMenuItem(),
+				new SeparatorMenuItem(),
+				Command.SORT_LOCATIONS.newMenuItem()
+			);
+			updateMenuItems(menu.getItems());
 			menu.show(primaryStage, event.getScreenX(), event.getScreenY());
 			event.consume();
 		});
@@ -468,7 +466,7 @@ public class PathnameAssistantApp
 		// Add style sheet to scene
 		styleManager.addStyleSheet(scene);
 
-		// Handle DRAG_OVER drag events
+		// Handle 'drag over' events
 		scene.setOnDragOver(event ->
 		{
 			// Accept drag if dragboard contains a file-system location
@@ -479,7 +477,7 @@ public class PathnameAssistantApp
 			event.consume();
 		});
 
-		// Handle DRAG_DROPPED drag events
+		// Handle 'drag dropped' events
 		scene.setOnDragDropped(event ->
 		{
 			// Get file-system locations from dragboard
@@ -672,116 +670,37 @@ public class PathnameAssistantApp
 		Menu fileMenu = new Menu(FILE_STR);
 		menuBar.getMenus().add(fileMenu);
 
-		// Add menu item: exit
-		MenuItem menuItem = new MenuItem(EXIT_STR);
-		menuItem.setOnAction(event ->
-				primaryStage.fireEvent(new WindowEvent(primaryStage, WindowEvent.WINDOW_CLOSE_REQUEST)));
-		fileMenu.getItems().add(menuItem);
+		// Add items to 'file' menu
+		fileMenu.getItems().add(Command.EXIT.newMenuItem());
 
 		// Create menu: edit
 		editMenu = new Menu(EDIT_STR);
 		menuBar.getMenus().add(editMenu);
 
-		// Get items for 'edit' menu
-		List<MenuItem> menuItems = getEditMenuItems();
-
-		// Add separator
-		menuItems.add(new SeparatorMenuItem());
-
-		// Add menu item: preferences
-		menuItem = new MenuItem(PREFERENCES_STR);
-		menuItem.setOnAction(event -> new PreferencesDialog(primaryStage).showDialog());
-		menuItems.add(menuItem);
-
-		// Add menu items
-		editMenu.getItems().addAll(menuItems);
+		// Add items to 'edit' menu
+		editMenu.getItems().addAll(
+			Command.COPY_FILENAMES.newMenuItem(),
+			Command.COPY_FILENAME_STEMS.newMenuItem(),
+			Command.COPY_PATHNAMES.newMenuItem(),
+			Command.COPY_PARENT_PATHNAME.newMenuItem(),
+			Command.PASTE.newMenuItem(),
+			new SeparatorMenuItem(),
+			Command.DELETE_LOCATION.newMenuItem(),
+			Command.CLEAR_LOCATIONS.newMenuItem(),
+			new SeparatorMenuItem(),
+			Command.SORT_LOCATIONS.newMenuItem(),
+			new SeparatorMenuItem(),
+			Command.EDIT_PREFERENCES.newMenuItem()
+		);
 
 		// Enable/disable items of 'edit' menu when menu is displayed
 		editMenu.setOnShowing(event -> updateEditMenu());
 
-		// Update 'edit' menu
+		// Enable/disable items of 'edit' menu
 		updateEditMenu();
 
 		// Return menu bar
 		return menuBar;
-	}
-
-	//------------------------------------------------------------------
-
-	/**
-	 * Returns a list of menu items that appear in the <i>Edit</i> menu of the main window and the context menu of the
-	 * list view.
-	 *
-	 * @return a list of menu items.
-	 */
-
-	private List<MenuItem> getEditMenuItems()
-	{
-		// Initialise list of menu items
-		List<MenuItem> menuItems = new ArrayList<>();
-
-		// Add menu item: copy filenames
-		MenuItem menuItem = new MenuItem(COPY_FILENAMES_STR);
-		menuItem.setUserData(MenuItemRequirement.LOCATIONS);
-		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.F, KeyCombination.CONTROL_DOWN));
-		menuItem.setOnAction(event -> onCopyFilenames());
-		menuItems.add(menuItem);
-
-		// Add menu item: copy filename stems
-		menuItem = new MenuItem(COPY_FILENAME_STEMS_STR);
-		menuItem.setUserData(MenuItemRequirement.LOCATIONS);
-		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.S, KeyCombination.CONTROL_DOWN));
-		menuItem.setOnAction(event -> onCopyFilenameStems());
-		menuItems.add(menuItem);
-
-		// Add menu item: copy pathnames
-		menuItem = new MenuItem(COPY_PATHNAMES_STR);
-		menuItem.setUserData(MenuItemRequirement.LOCATIONS);
-		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.P, KeyCombination.CONTROL_DOWN));
-		menuItem.setOnAction(event -> onCopyPathnames());
-		menuItems.add(menuItem);
-
-		// Add menu item: copy parent pathname
-		menuItem = new MenuItem(COPY_PARENT_PATHNAME_STR);
-		menuItem.setUserData(MenuItemRequirement.SELECTED_LOCATION_NOT_ROOT);
-		menuItem.setOnAction(event -> onCopyParentPathname());
-		menuItems.add(menuItem);
-
-		// Add menu item: paste
-		menuItem = new MenuItem(PASTE_STR);
-		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.V, KeyCombination.CONTROL_DOWN));
-		menuItem.setOnAction(event -> onPaste());
-		menuItems.add(menuItem);
-
-		// Add separator
-		menuItems.add(new SeparatorMenuItem());
-
-		// Add menu item: delete location
-		menuItem = new MenuItem(DELETE_LOCATION_STR);
-		menuItem.setUserData(MenuItemRequirement.SELECTED_LOCATION);
-		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.DELETE));
-		menuItem.setOnAction(event -> onDeleteLocation());
-		menuItems.add(menuItem);
-
-		// Add menu item: clear locations
-		menuItem = new MenuItem(CLEAR_LOCATIONS_STR);
-		menuItem.setUserData(MenuItemRequirement.LOCATIONS);
-		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.X, KeyCombination.CONTROL_DOWN));
-		menuItem.setOnAction(event -> onClearLocations());
-		menuItems.add(menuItem);
-
-		// Add separator
-		menuItems.add(new SeparatorMenuItem());
-
-		// Add menu item: sort locations
-		menuItem = new MenuItem(SORT_LOCATIONS_STR);
-		menuItem.setUserData(MenuItemRequirement.MULTIPLE_LOCATIONS);
-		menuItem.setAccelerator(new KeyCodeCombination(KeyCode.F9));
-		menuItem.setOnAction(event -> onSortLocations());
-		menuItems.add(menuItem);
-
-		// Return menu items
-		return menuItems;
 	}
 
 	//------------------------------------------------------------------
@@ -798,18 +717,22 @@ public class PathnameAssistantApp
 	{
 		for (MenuItem menuItem : menuItems)
 		{
-			if (menuItem.getUserData() instanceof MenuItemRequirement menuItemRequirement)
+			if (menuItem.getUserData() instanceof Command command)
 			{
-				menuItem.setDisable(switch (menuItemRequirement)
+				menuItem.setDisable(switch (command)
 				{
-					case LOCATIONS                  -> locations.isEmpty();
-					case MULTIPLE_LOCATIONS         -> (locations.size() < 2);
-					case SELECTED_LOCATION          -> locationsListView.getSelectionModel().isEmpty();
-					case SELECTED_LOCATION_NOT_ROOT ->
+					case CLEAR_LOCATIONS,
+						 COPY_FILENAMES,
+						 COPY_FILENAME_STEMS,
+						 COPY_PATHNAMES       -> locations.isEmpty();
+					case COPY_PARENT_PATHNAME ->
 					{
 						Path location = locationsListView.getSelectionModel().getSelectedItem();
 						yield (location == null) || (location.getParent() == null);
 					}
+					case DELETE_LOCATION      -> locationsListView.getSelectionModel().isEmpty();
+					case SORT_LOCATIONS       -> (locations.size() < 2);
+					default                   -> false;
 				});
 			}
 		}
@@ -862,30 +785,45 @@ public class PathnameAssistantApp
 	//------------------------------------------------------------------
 
 	/**
+	 * Fires an event to request the closure of the main window.  If the event is not consumed, the application is
+	 * terminated.
+	 */
+
+	private void onExit()
+	{
+		primaryStage.fireEvent(new WindowEvent(primaryStage, WindowEvent.WINDOW_CLOSE_REQUEST));
+	}
+
+	//------------------------------------------------------------------
+
+	/**
 	 * Copies the filename of each element of the list of locations to the system clipboard.  If there is more than one
 	 * location, a line-feed character (U+000A) is appended to each filename.
 	 */
 
 	private void onCopyFilenames()
 	{
-		// Create text
-		StringBuilder buffer = new StringBuilder(locations.size() * 32);
-		for (Path location : locations)
+		if (!locations.isEmpty())
 		{
-			buffer.append(location.getFileName());
+			// Create text
+			StringBuilder buffer = new StringBuilder(locations.size() * 32);
+			for (Path location : locations)
+			{
+				buffer.append(location.getFileName());
 
-			if (locations.size() > 1)
-				buffer.append('\n');
-		}
+				if (locations.size() > 1)
+					buffer.append('\n');
+			}
 
-		// Put text on clipboard
-		try
-		{
-			ClipboardUtils.putTextThrow(buffer.toString());
-		}
-		catch (BaseException e)
-		{
-			ErrorDialog.show(primaryStage, COPY_FILENAMES_STR, e);
+			// Put text on clipboard
+			try
+			{
+				ClipboardUtils.putTextThrow(buffer.toString());
+			}
+			catch (BaseException e)
+			{
+				ErrorDialog.show(primaryStage, Command.COPY_FILENAMES.text, e);
+			}
 		}
 	}
 
@@ -900,28 +838,31 @@ public class PathnameAssistantApp
 
 	private void onCopyFilenameStems()
 	{
-		// Create text
-		StringBuilder buffer = new StringBuilder(locations.size() * 32);
-		for (Path location : locations)
+		if (!locations.isEmpty())
 		{
-			String filename = location.getFileName().toString();
-			int index = filename.indexOf('.');
-			if (index > 1)
-				filename = filename.substring(0, index);
-			buffer.append(filename);
+			// Create text
+			StringBuilder buffer = new StringBuilder(locations.size() * 32);
+			for (Path location : locations)
+			{
+				String filename = location.getFileName().toString();
+				int index = filename.indexOf('.');
+				if (index > 1)
+					filename = filename.substring(0, index);
+				buffer.append(filename);
 
-			if (locations.size() > 1)
-				buffer.append('\n');
-		}
+				if (locations.size() > 1)
+					buffer.append('\n');
+			}
 
-		// Put text on clipboard
-		try
-		{
-			ClipboardUtils.putTextThrow(buffer.toString());
-		}
-		catch (BaseException e)
-		{
-			ErrorDialog.show(primaryStage, COPY_FILENAME_STEMS_STR, e);
+			// Put text on clipboard
+			try
+			{
+				ClipboardUtils.putTextThrow(buffer.toString());
+			}
+			catch (BaseException e)
+			{
+				ErrorDialog.show(primaryStage, Command.COPY_FILENAME_STEMS.text, e);
+			}
 		}
 	}
 
@@ -935,25 +876,28 @@ public class PathnameAssistantApp
 
 	private void onCopyPathnames()
 	{
-		// Create text
-		Format format = formatSpinner.getItem();
-		StringBuilder buffer = new StringBuilder(locations.size() * 128);
-		for (Path location : locations)
+		if (!locations.isEmpty())
 		{
-			buffer.append(format.locationToString(location));
+			// Create text
+			Format format = formatSpinner.getItem();
+			StringBuilder buffer = new StringBuilder(locations.size() * 128);
+			for (Path location : locations)
+			{
+				buffer.append(format.locationToString(location));
 
-			if (locations.size() > 1)
-				buffer.append('\n');
-		}
+				if (locations.size() > 1)
+					buffer.append('\n');
+			}
 
-		// Put text on clipboard
-		try
-		{
-			ClipboardUtils.putTextThrow(buffer.toString());
-		}
-		catch (BaseException e)
-		{
-			ErrorDialog.show(primaryStage, COPY_PATHNAMES_STR, e);
+			// Put text on clipboard
+			try
+			{
+				ClipboardUtils.putTextThrow(buffer.toString());
+			}
+			catch (BaseException e)
+			{
+				ErrorDialog.show(primaryStage, Command.COPY_PATHNAMES.text, e);
+			}
 		}
 	}
 
@@ -966,19 +910,21 @@ public class PathnameAssistantApp
 
 	private void onCopyParentPathname()
 	{
-		try
+		Path location = locationsListView.getSelectionModel().getSelectedItem();
+		if (location != null)
 		{
-			Path location = locationsListView.getSelectionModel().getSelectedItem();
-			if (location != null)
+			Path parent = location.getParent();
+			if (parent != null)
 			{
-				Path parent = location.getParent();
-				if (parent != null)
+				try
+				{
 					ClipboardUtils.putTextThrow(formatSpinner.getItem().locationToString(parent));
+				}
+				catch (BaseException e)
+				{
+					ErrorDialog.show(primaryStage, Command.COPY_PARENT_PATHNAME.text, e);
+				}
 			}
-		}
-		catch (BaseException e)
-		{
-			ErrorDialog.show(primaryStage, COPY_PARENT_PATHNAME_STR, e);
 		}
 	}
 
@@ -994,7 +940,7 @@ public class PathnameAssistantApp
 		List<Path> locations = ClipboardUtils.locations();
 		if (locations.isEmpty())
 		{
-			NotificationDialog.show(primaryStage, PASTE_STR, MessageIcon32.ALERT.get(),
+			NotificationDialog.show(primaryStage, Command.PASTE.text, MessageIcon32.ALERT.get(),
 									ErrorMsg.NO_LOCATIONS_ON_CLIPBOARD);
 		}
 		else
@@ -1035,14 +981,17 @@ public class PathnameAssistantApp
 
 	private void onClearLocations()
 	{
-		// Update instance variable
-		locations.clear();
+		if (!locations.isEmpty())
+		{
+			// Update instance variable
+			locations.clear();
 
-		// Update list view
-		updateListView();
+			// Update list view
+			updateListView();
 
-		// Update 'edit' menu
-		updateEditMenu();
+			// Update 'edit' menu
+			updateEditMenu();
+		}
 	}
 
 	//------------------------------------------------------------------
@@ -1054,18 +1003,32 @@ public class PathnameAssistantApp
 
 	private void onSortLocations()
 	{
-		// Sort locations using default comparator for the associated file system
-		try
+		if (locations.size() > 1)
 		{
-			locations.sort(null);
-		}
-		catch (ClassCastException e)
-		{
-			// ignore
-		}
+			// Sort locations using default comparator for the associated file system
+			try
+			{
+				locations.sort(null);
+			}
+			catch (ClassCastException e)
+			{
+				// ignore
+			}
 
-		// Update list view
-		updateListView();
+			// Update list view
+			updateListView();
+		}
+	}
+
+	//------------------------------------------------------------------
+
+	/**
+	 * Displays a modal dialog in which the user preferences can be edited.
+	 */
+
+	private void onEditPreferences()
+	{
+		PreferencesDialog.show(primaryStage);
 	}
 
 	//------------------------------------------------------------------
@@ -1178,7 +1141,7 @@ public class PathnameAssistantApp
 		 * Creates a new instance of an enumeration constant for a pathname format.
 		 *
 		 * @param text
-		 *          the text that will represent this format.
+		 *          the text that will represent the format.
 		 */
 
 		private Format(
@@ -1226,6 +1189,188 @@ public class PathnameAssistantApp
 					str += " (" + osName + ")";
 			}
 			return str;
+		}
+
+		//--------------------------------------------------------------
+
+	}
+
+	//==================================================================
+
+
+	// ENUMERATION: COMMAND
+
+
+	/**
+	 * This is an enumeration of commands that can be executed on the application.
+	 */
+
+	private enum Command
+	{
+
+	////////////////////////////////////////////////////////////////////
+	//  Constants
+	////////////////////////////////////////////////////////////////////
+
+		/**
+		 * Terminate the application.
+		 */
+		EXIT
+		(
+			"Exit",
+			null,
+			PathnameAssistantApp.instance::onExit
+		),
+
+		/**
+		 * Copy the filenames of items in the list of locations to the system clipboard.
+		 */
+		COPY_FILENAMES
+		(
+			"Copy filenames",
+			new KeyCodeCombination(KeyCode.F, KeyCombination.CONTROL_DOWN),
+			PathnameAssistantApp.instance::onCopyFilenames
+		),
+
+		/**
+		 * Copy the filename stems of items in the list of locations to the system clipboard.
+		 */
+		COPY_FILENAME_STEMS
+		(
+			"Copy filename stems",
+			new KeyCodeCombination(KeyCode.S, KeyCombination.CONTROL_DOWN),
+			PathnameAssistantApp.instance::onCopyFilenameStems
+		),
+
+		/**
+		 * Copy the pathnames of items in the list of locations to the system clipboard.
+		 */
+		COPY_PATHNAMES
+		(
+			"Copy pathnames",
+			new KeyCodeCombination(KeyCode.P, KeyCombination.CONTROL_DOWN),
+			PathnameAssistantApp.instance::onCopyPathnames
+		),
+
+		/**
+		 * Copy the pathname of the parent of the selected location to the system clipboard.
+		 */
+		COPY_PARENT_PATHNAME
+		(
+			"Copy parent pathname",
+			null,
+			PathnameAssistantApp.instance::onCopyParentPathname
+		),
+
+		/**
+		 * Append file-system locations from the system clipboard to the list of locations.
+		 */
+		PASTE
+		(
+			"Paste",
+			new KeyCodeCombination(KeyCode.V, KeyCombination.CONTROL_DOWN),
+			PathnameAssistantApp.instance::onPaste
+		),
+
+		/**
+		 * Remove the selected item from the list of locations.
+		 */
+		DELETE_LOCATION
+		(
+			"Delete location",
+			new KeyCodeCombination(KeyCode.DELETE),
+			PathnameAssistantApp.instance::onDeleteLocation
+		),
+
+		/**
+		 * Remove all items from the list of locations.
+		 */
+		CLEAR_LOCATIONS
+		(
+			"Clear locations",
+			new KeyCodeCombination(KeyCode.X, KeyCombination.CONTROL_DOWN),
+			PathnameAssistantApp.instance::onClearLocations
+		),
+
+		/**
+		 * Sort the list of locations lexicographically.
+		 */
+		SORT_LOCATIONS
+		(
+			"Sort locations",
+			new KeyCodeCombination(KeyCode.F9),
+			PathnameAssistantApp.instance::onSortLocations
+		),
+
+		/**
+		 * Edit the user preferences.
+		 */
+		EDIT_PREFERENCES
+		(
+			"Preferences",
+			null,
+			PathnameAssistantApp.instance::onEditPreferences
+		);
+
+	////////////////////////////////////////////////////////////////////
+	//  Instance variables
+	////////////////////////////////////////////////////////////////////
+
+		/** The text that represents this command. */
+		private	String						text;
+
+		/** The key combination that invokes this command. */
+		private	KeyCombination				keyCombo;
+
+		/** The handler for action events that invoke this command. */
+		private	EventHandler<ActionEvent>	eventHandler;
+
+	////////////////////////////////////////////////////////////////////
+	//  Constructors
+	////////////////////////////////////////////////////////////////////
+
+		/**
+		 * Creates a new instance of an enumeration constant for a command.
+		 *
+		 * @param text
+		 *          the text that will represent the command.
+		 * @param keyCombo
+		 *          the key combination that will invoke the command.
+		 * @param action
+		 *          the action that will be performed by the command.
+		 */
+
+		private Command(
+			String			text,
+			KeyCombination	keyCombo,
+			Runnable		action)
+		{
+			// Initialise instance variables
+			this.text = text;
+			this.keyCombo = keyCombo;
+			eventHandler = event -> action.run();
+		}
+
+		//--------------------------------------------------------------
+
+	////////////////////////////////////////////////////////////////////
+	//  Instance methods
+	////////////////////////////////////////////////////////////////////
+
+		/**
+		 * Creates and returns a new instance of a menu item for this command.
+		 *
+		 * @return a new instance of a menu item for this command.
+		 */
+
+		private MenuItem newMenuItem()
+		{
+			MenuItem menuItem = new MenuItem(text);
+			menuItem.setUserData(this);
+			if (keyCombo != null)
+				menuItem.setAccelerator(keyCombo);
+			menuItem.setOnAction(eventHandler);
+			return menuItem;
 		}
 
 		//--------------------------------------------------------------
@@ -1286,125 +1431,6 @@ public class PathnameAssistantApp
 				// Set parent directory of config file
 				setDirectory(directory.location());
 			}
-		}
-
-		//--------------------------------------------------------------
-
-	}
-
-	//==================================================================
-
-
-	// CLASS: PREFERENCES DIALOG
-
-
-	/**
-	 * This class implements a modal dialog in which the user preferences of the application may be edited.
-	 */
-
-	private static class PreferencesDialog
-		extends SimpleModalDialog<Void>
-	{
-
-	////////////////////////////////////////////////////////////////////
-	//  Constants
-	////////////////////////////////////////////////////////////////////
-
-		/** The horizontal gap between adjacent components of the control pane. */
-		private static final	double	CONTROL_PANE_H_GAP	= 6.0;
-
-		/** The padding around the control pane. */
-		private static final	Insets	CONTROL_PANE_PADDING	= new Insets(6.0, 12.0, 6.0, 12.0);
-
-		/** Miscellaneous strings. */
-		private static final	String	PREFERENCES_STR	= "Preferences";
-		private static final	String	THEME_STR		= "Theme";
-
-	////////////////////////////////////////////////////////////////////
-	//  Instance variables
-	////////////////////////////////////////////////////////////////////
-
-		/** Flag: if {@code true}, this dialog was accepted. */
-		private	boolean	accepted;
-
-	////////////////////////////////////////////////////////////////////
-	//  Constructors
-	////////////////////////////////////////////////////////////////////
-
-		/**
-		 * Creates a new instance of a modal dialog in which the user preferences of the application may be edited.
-		 *
-		 * @param owner
-		 *          the window that will be the owner of this dialog, or {@code null} if the dialog has no owner.
-		 */
-
-		private PreferencesDialog(
-			Window	owner)
-		{
-			// Call superclass constructor
-			super(owner, MethodHandles.lookup().lookupClass().getCanonicalName(), null, PREFERENCES_STR);
-
-			// Create procedure to select theme
-			StyleManager styleManager = StyleManager.INSTANCE;
-			IProcedure1<String> selectTheme = id ->
-			{
-				if (id != null)
-				{
-					// Update theme
-					styleManager.selectTheme(id);
-
-					// Reapply style sheet to the scenes of all JavaFX windows
-					styleManager.reapplyStylesheet();
-				}
-			};
-
-			// Create spinner: theme
-			String themeId = styleManager.getThemeId();
-			CollectionSpinner<String> themeSpinner =
-					CollectionSpinner.leftRightH(HPos.CENTER, true, styleManager.getThemeIds(), themeId, null,
-												 id -> styleManager.findTheme(id).name());
-			themeSpinner.itemProperty().addListener((observable, oldId, id) -> selectTheme.invoke(id));
-
-			// Create control pane
-			HBox controlPane = new HBox(CONTROL_PANE_H_GAP, Labels.hNoShrink(THEME_STR), themeSpinner);
-			controlPane.setMaxWidth(Region.USE_PREF_SIZE);
-			controlPane.setAlignment(Pos.CENTER_LEFT);
-			controlPane.setPadding(CONTROL_PANE_PADDING);
-
-			// Add control pane to content pane
-			addContent(controlPane);
-
-			// Create button: OK
-			Button okButton = Buttons.hNoShrink(OK_STR);
-			okButton.getProperties().put(BUTTON_GROUP_KEY, BUTTON_GROUP1);
-			okButton.setOnAction(event ->
-			{
-				// Indicate that dialog was accepted
-				accepted = true;
-
-				// Close dialog
-				requestClose();
-			});
-			addButton(okButton, HPos.RIGHT);
-
-			// Create button: cancel
-			Button cancelButton = Buttons.hNoShrink(CANCEL_STR);
-			cancelButton.getProperties().put(BUTTON_GROUP_KEY, BUTTON_GROUP1);
-			cancelButton.setOnAction(event -> requestClose());
-			addButton(cancelButton, HPos.RIGHT);
-
-			// Fire 'cancel' button if Escape key is pressed; fire 'OK' button if Ctrl+Enter is pressed
-			setKeyFireButton(cancelButton, okButton);
-
-			// When window is closed, restore old theme if dialog was not accepted
-			setOnHiding(event ->
-			{
-				if (!accepted && !Objects.equals(themeId, styleManager.getThemeId()))
-					selectTheme.invoke(themeId);
-			});
-
-			// Apply new style sheet to scene
-			applyStyleSheet();
 		}
 
 		//--------------------------------------------------------------
