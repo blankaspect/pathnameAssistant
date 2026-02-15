@@ -32,8 +32,9 @@ that may be useful.
 
 ----
 
-The contents of this repository are covered by two licences:
+The contents of this repository are covered by three licences:
 
-* You may use the contents of the `uk.blankaspect.pathnameassistant` package \(including resources\) under the terms of
-the GPL version 3 license.
-* You may use all other contents of this repository under the terms of the MIT license.
+* You may use the contents of the `uk.blankaspect.pathnameassistant` package \(including resources\) under the terms and
+conditions of the GPL version 3 license.
+* You may use the Roboto Mono font files under the terms and conditions of version 1.1 of the SIL Open Font License.
+* You may use all other contents of this repository under the terms and conditions of the MIT license.
