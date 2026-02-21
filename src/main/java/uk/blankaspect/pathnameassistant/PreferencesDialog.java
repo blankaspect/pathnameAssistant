@@ -70,8 +70,8 @@ class PreferencesDialog
 	private static final	Insets	CONTROL_PANE_PADDING	= new Insets(6.0, 12.0, 6.0, 12.0);
 
 	/** Miscellaneous strings. */
-	private static final	String	PREFERENCES_STR	= "Preferences";
-	private static final	String	THEME_STR		= "Theme";
+	private static final	String	PREFERENCES_STR		= "Preferences";
+	private static final	String	COLOUR_SCHEME_STR	= "Colour scheme";
 
 ////////////////////////////////////////////////////////////////////////
 //  Instance variables
@@ -119,7 +119,7 @@ class PreferencesDialog
 		themeSpinner.itemProperty().addListener((observable, oldId, id) -> selectTheme.invoke(id));
 
 		// Create control pane
-		HBox controlPane = new HBox(CONTROL_PANE_H_GAP, Labels.hNoShrink(THEME_STR), themeSpinner);
+		HBox controlPane = new HBox(CONTROL_PANE_H_GAP, Labels.hNoShrink(COLOUR_SCHEME_STR), themeSpinner);
 		controlPane.setMaxWidth(Region.USE_PREF_SIZE);
 		controlPane.setAlignment(Pos.CENTER_LEFT);
 		controlPane.setPadding(CONTROL_PANE_PADDING);
