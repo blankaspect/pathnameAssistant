@@ -108,6 +108,7 @@ import uk.blankaspect.ui.jfx.spinner.CollectionSpinner;
 
 import uk.blankaspect.ui.jfx.style.StyleManager;
 
+import uk.blankaspect.ui.jfx.window.WindowDims;
 import uk.blankaspect.ui.jfx.window.WindowState;
 
 //----------------------------------------------------------------------
@@ -524,12 +525,17 @@ public class PathnameAssistantApp
 		// When main window is shown, set its size and location
 		primaryStage.setOnShown(event ->
 		{
+			// Get dimensions of window
+			WindowDims dims = new WindowDims(primaryStage);
+
 			// Set size of main window after a delay
 			ExecUtils.afterDelay(getDelay(SystemPropertyKey.MAIN_WINDOW_DELAY_SIZE), () ->
 			{
+				// Update dimensions
+				dims.update(false);
+
 				// Temporarily set minimum dimensions to prevent window from shrinking (Linux/GNOME)
-				primaryStage.setMinWidth(primaryStage.getWidth());
-				primaryStage.setMinHeight(primaryStage.getHeight());
+				dims.setMin();
 
 				// Get size of window from saved state
 				Dimension2D size = mainWindowState.getSize();
