@@ -535,7 +535,7 @@ public class PathnameAssistantApp
 				dims.update(false);
 
 				// Temporarily set minimum dimensions to prevent window from shrinking (Linux/GNOME)
-				dims.setMin();
+				dims.setMin(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT);
 
 				// Get size of window from saved state
 				Dimension2D size = mainWindowState.getSize();
@@ -543,8 +543,19 @@ public class PathnameAssistantApp
 				// Set size of window
 				if (size != null)
 				{
-					primaryStage.setWidth(size.getWidth());
-					primaryStage.setHeight(size.getHeight());
+					// Set width
+					double width = size.getWidth();
+					if (width <= 0.0)
+						width = Math.max(MAIN_WINDOW_MIN_WIDTH, dims.w());
+					primaryStage.setMinWidth(width);
+					primaryStage.setWidth(width);
+
+					// Set height
+					double height = size.getHeight();
+					if (height <= 0.0)
+						height = Math.max(MAIN_WINDOW_MIN_HEIGHT, dims.h());
+					primaryStage.setMinHeight(height);
+					primaryStage.setHeight(height);
 				}
 
 				// Set size and location of main window after a delay
